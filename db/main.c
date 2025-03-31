@@ -16,6 +16,13 @@ typedef struct {
     ssize_t input_length;
 } InputBuffer;
 
+typedef struct{
+    Table* table;
+    uint32_t row_num;
+    bool end_of_table;
+}Cursor;
+
+
 typedef struct {
     int file_descriptor;
     uint32_t file_length;
@@ -76,6 +83,25 @@ const uint32_t TABLE_MAX_ROWS = ROWS_PER_PAGE * TABLE_MAX_PAGES;
 void print_prompt() {
     printf("db > ");
 }
+Cursor* table_start(Table* table){
+    Cursor* cursor = malloc(sizeof(Cursor));
+    cursor->table= table;
+    cursor->row_num =0;
+    cursor->end_of_table = (table->num_rows==0);
+
+    return cursor;
+}
+
+Cursor* table_end(Table* table){
+    Cursor* cursor = malloc(sizeof(Cursor));
+    cursor->table= table;
+    cursor->row_num = table->row_nums;
+    cursor->end_of_table = true;
+
+    return cursor;
+}
+
+
 
 void read_input(InputBuffer* input_buffer) {
     size_t buffer_size = 1024;
@@ -136,13 +162,21 @@ void* get_page(Pager* pager, uint32_t page_num) {
     return pager->pages[page_num];
 }
 
-void* row_slot(Table* table, uint32_t row_num) {
+void* cursor(Cursor* cursor){
+    uint32_t row_num = cursor->row_num;
     uint32_t page_num = row_num / ROWS_PER_PAGE;
-    void* page = get_page(table->pager, page_num);
+    void* page = get_page(cursor->table->pager, page_num);
     uint32_t row_offset = row_num % ROWS_PER_PAGE;
     uint32_t byte_offset = row_offset * ROW_SIZE;
     return page + byte_offset;
 }
+
+void cursor_advance(Cursor* cursor){
+    cursor->row_num +=1;
+    if(cursor->row_num >= cursor->table->num_rows) 
+        cursor->end_of_table=true;
+}
+
 
 Pager* pager_open(const char* filename) {
     int fd = open(filename, O_RDWR | O_CREAT, S_IWUSR | S_IRUSR);
@@ -151,6 +185,7 @@ Pager* pager_open(const char* filename) {
         exit(EXIT_FAILURE);
     }
     off_t file_length = lseek(fd, 0, SEEK_END);
+
 
     Pager* pager = malloc(sizeof(Pager));
     pager->file_descriptor = fd;
